@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
-// Definición de la página de pago aceptado
 class PagoAceptadoPage extends StatelessWidget {
-  // ATRIBUTOS REQUERIDOS EN EL CONSTRUCTOR (Esta es la parte CRÍTICA)
+  // ATRIBUTOS REQUERIDOS EN EL CONSTRUCTOR
   final String transactionId;
-  final String amount;
+  final String
+  amount; // Ya viene con la moneda correcta (Ej: "Bs. 10.50" o "USD 10.50")
   final String result;
 
   const PagoAceptadoPage({
@@ -47,10 +47,8 @@ class PagoAceptadoPage extends StatelessWidget {
     const Color successColor = Color(0xFF388E3C); // Green
     const Color customPrimaryColor = Color(0xFF004A72);
 
-    // Formatear el monto si es un número (opcional, para mejor visualización)
-    final formattedAmount = double.tryParse(amount) != null
-        ? 'Bs. ${double.parse(amount).toStringAsFixed(2)}'
-        : 'Bs. $amount';
+    // El monto ya viene formateado con la moneda
+    final formattedAmount = amount;
 
     return Scaffold(
       appBar: AppBar(
@@ -116,7 +114,7 @@ class PagoAceptadoPage extends StatelessWidget {
                         // Detalle: Amount
                         _buildDetailRow(
                           'Monto Pagado:',
-                          formattedAmount,
+                          formattedAmount, // Usa el string ya corregido (Ej: "USD 10.50")
                           successColor,
                         ),
 

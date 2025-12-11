@@ -21,10 +21,12 @@ class _PagoPageState extends State<PagoPage> {
   String? _selectedDocumentType;
   String? _selectedBank = 'Banco de Venezuela';
   String? _selectedPaymentMethod;
+  String? _selectedCurrency = 'Bs.'; // Estado para la moneda seleccionada
 
   // Listas de opciones
   final List<String> _documentTypes = ['V', 'E'];
   final List<String> _paymentMethods = ['Ahorro', 'Corriente'];
+  final List<String> _currencies = ['Bs.', 'USD']; // Opciones de Moneda
 
   // Controladores para los campos de texto
   final TextEditingController _numberController = TextEditingController();
@@ -140,7 +142,6 @@ class _PagoPageState extends State<PagoPage> {
     },
   ];
 
-  // --- Mapeo de Códigos MODIFICADO para usar _bankOptions ---
   String _getPaymentGroupCode(String? bankName) {
     final selectedBankData = _bankOptions.firstWhere(
       (bank) => bank['name'] == bankName,
@@ -174,7 +175,13 @@ class _PagoPageState extends State<PagoPage> {
       return;
     }
 
-    // --- Extracción y Preparación de Datos ---
+    // --- DECLARACIÓN DE VARIABLES DE AMBITO (Fuera del try/catch) ---
+    Map<String, dynamic> dataToSend = {};
+    double amountForBiopago = 0.0;
+    String displayAmount = "0.00";
+    // -------------------------------------------------
+
+    // --- Extracción de Datos de Formulario ---
     final identificationNumber = _numberController.text.trim();
     final amountTextForParsing = _amountController.text
         .replaceAll(',', '.')
@@ -188,28 +195,11 @@ class _PagoPageState extends State<PagoPage> {
       return;
     }
 
-    final double amountForBiopago = rawAmount;
     final identificationLetter = _selectedDocumentType ?? 'V';
     final paymentGroupCode = _getPaymentGroupCode(_selectedBank);
     final paymentMethodCode = _getPaymentMethodCode(_selectedPaymentMethod);
 
-    // Datos que serán enviados (útiles para diagnóstico en caso de error)
-    final Map<String, dynamic> dataToSend = {
-      "paymentGroup": paymentGroupCode,
-      "paymentMethod": paymentMethodCode,
-      "identificationLetter": identificationLetter,
-      "identificationNumber": identificationNumber,
-      "amount": amountForBiopago,
-    };
-
-    // 2. MOSTRAR DIÁLOGO DE CARGA Y DATOS DE ENVÍO
-    setState(() {
-      _diagnosticData =
-          'Datos a enviar a BiopagoService (Monto como Double):\n' +
-          dataToSend.entries.map((e) => '  ${e.key}: ${e.value}').join('\n');
-    });
-
-    // Mostrar diálogo de carga.
+    // 2. MOSTRAR DIÁLOGO DE CARGA E INICIAR CONSULTA
     showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -221,7 +211,7 @@ class _PagoPageState extends State<PagoPage> {
               const CircularProgressIndicator(),
               const SizedBox(width: 20),
               Text(
-                "Esperando App Biopago BDV...",
+                "Procesando pago y consultando tasa...",
                 style: TextStyle(color: customPrimaryColor),
               ),
             ],
@@ -230,29 +220,80 @@ class _PagoPageState extends State<PagoPage> {
       },
     );
 
-    // Limpiamos el formulario antes de la llamada
-    _numberController.clear();
-    _amountController.clear();
-
     try {
-      // 3. Llamada al servicio Biopago (Comando: process)
+      // 3. CONVERSIÓN DE MONEDA (si es USD)
+      amountForBiopago = rawAmount; // Inicialmente es el rawAmount
+      if (_selectedCurrency == 'USD') {
+        setState(() {
+          _diagnosticData = 'Consultando tasa de cambio del día...';
+        });
+
+        // Obtener la tasa de DolarAPI
+        final double? exchangeRate = await biopagoService.getExchangeRateUSD();
+
+        if (exchangeRate == null || exchangeRate <= 0) {
+          // Aseguramos que dataToSend contenga al menos los datos del formulario antes de fallar.
+          dataToSend = {
+            "paymentGroup": paymentGroupCode,
+            "paymentMethod": paymentMethodCode,
+            "identificationLetter": identificationLetter,
+            "identificationNumber": identificationNumber,
+            "amount": rawAmount,
+            "originalCurrency": _selectedCurrency,
+          };
+          throw Exception(
+            "No se pudo obtener la tasa de cambio USD o es inválida.",
+          );
+        }
+
+        // Realiza la conversión
+        amountForBiopago = rawAmount * exchangeRate;
+        displayAmount = rawAmount.toStringAsFixed(
+          2,
+        ); // Monto para mostrar es en USD
+
+        setState(() {
+          _diagnosticData =
+              'Tasa USD/Bs.: ${exchangeRate.toStringAsFixed(4)}. Monto a enviar (Bs.): ${amountForBiopago.toStringAsFixed(2)}';
+        });
+      } else {
+        // Si es Bs., el monto es el original
+        displayAmount = rawAmount.toStringAsFixed(2);
+      }
+
+      // --- ASIGNACIÓN DE VALOR A dataToSend ---
+      dataToSend = {
+        "paymentGroup": paymentGroupCode,
+        "paymentMethod": paymentMethodCode,
+        "identificationLetter": identificationLetter,
+        "identificationNumber": identificationNumber,
+        "amount": amountForBiopago, // El monto en Bs. (convertido si era USD)
+        "originalAmount": displayAmount, // Monto original para el ticket
+        "originalCurrency": _selectedCurrency,
+      };
+
+      // Limpiamos el formulario antes de la llamada
+      _numberController.clear();
+      _amountController.clear();
+
+      // 4. Llamada al servicio Biopago (Comando: process)
       final Map<String, String?> result = await biopagoService.process(
         paymentGroup: paymentGroupCode,
         paymentMethod: paymentMethodCode,
         identificationLetter: identificationLetter,
         identificationNumber: identificationNumber,
-        amount: amountForBiopago, // Pasamos el double directamente
+        amount: amountForBiopago, // Monto ya en Bolívares
       );
 
-      // 4. OCULTAR DIÁLOGO
+      // 5. OCULTAR DIÁLOGO
       _dismissLoadingDialog();
 
-      // 5. Manejo de la Respuesta Final
+      // 6. Manejo de la Respuesta Final
       if (mounted) {
         _handleResult(context, result, dataToSend);
       }
     } catch (e) {
-      // 6. Manejo de Errores Críticos
+      // 7. Manejo de Errores Críticos
       _dismissLoadingDialog();
 
       String criticalError = "Excepción Crítica";
@@ -265,7 +306,7 @@ class _PagoPageState extends State<PagoPage> {
             builder: (context) => PagoFallidoPage(
               title: criticalError,
               mainMessage:
-                  "El sistema no pudo iniciar la aplicación de Biopago BDV o ocurrió un fallo de plataforma.",
+                  "El sistema no pudo procesar la solicitud (conversión/Biopago).",
               errorDetail: errorDetails,
               dataSent: dataToSend,
               resultReceived: {},
@@ -276,7 +317,7 @@ class _PagoPageState extends State<PagoPage> {
     }
   }
 
-  // --- Función para Manejar y Navegar el Resultado del Servicio (MODIFICADA) ---
+  // --- Función para Manejar y Navegar el Resultado del Servicio (CORREGIDA) ---
   void _handleResult(
     BuildContext context,
     Map<String, String?> result,
@@ -293,20 +334,34 @@ class _PagoPageState extends State<PagoPage> {
 
     if (resultCode == "Accepted" || resultCode == "Success") {
       // PAGO EXITOSO
-
-      // 1. Extraer los datos necesarios de la respuesta y el dato enviado
       final String transactionId = result["transactionId"] ?? "N/A";
-      // Usar el monto enviado (dataSent) si el resultado no lo incluye o si es más seguro.
-      final String amount =
-          (dataSent["amount"] as double?)?.toStringAsFixed(2) ?? "0.00";
+
+      // Monto original para el ticket (ej: "10.00")
+      final String amountForTicket =
+          dataSent["originalAmount"] as String? ?? "0.00";
+      // Moneda original seleccionada (ej: "USD" o "Bs.")
+      final String currencyForTicket =
+          dataSent["originalCurrency"] as String? ?? "Bs.";
       final String finalResult = result["result"] ?? "Success";
+
+      // --- CORRECCIÓN CLAVE: Formatear correctamente el string de salida ---
+      String finalDisplayAmount;
+      if (currencyForTicket == 'Bs.') {
+        // Si es Bs., solo añade el símbolo "Bs. " al monto.
+        finalDisplayAmount = 'Bs. $amountForTicket';
+      } else {
+        // Si es USD, añade "USD " al monto.
+        finalDisplayAmount = '$currencyForTicket $amountForTicket';
+      }
+      // ---------------------------------------------------------------------
 
       // 2. Navegar usando pushReplacementNamed con argumentos
       Navigator.of(context).pushReplacementNamed(
         'PagoAceptadoPage',
         arguments: {
           'transactionId': transactionId,
-          'amount': amount,
+          // Usamos el string corregido
+          'amount': finalDisplayAmount,
           'result': finalResult,
         },
       );
@@ -338,6 +393,7 @@ class _PagoPageState extends State<PagoPage> {
 
   @override
   Widget build(BuildContext context) {
+    // ... (El resto del método build() se mantiene igual) ...
     final focusedBorderStyle = OutlineInputBorder(
       borderSide: BorderSide(color: customPrimaryColor, width: 2.0),
       borderRadius: const BorderRadius.all(Radius.circular(8.0)),
@@ -387,7 +443,7 @@ class _PagoPageState extends State<PagoPage> {
                 ),
               ),
 
-              // 1. Letra y Número de Cédula
+              // 1. Letra y Número de Cédula (Sin cambios)
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
@@ -463,7 +519,7 @@ class _PagoPageState extends State<PagoPage> {
 
               const SizedBox(height: 25),
 
-              // 2. Selector de Banco CON IMAGE.ASSET
+              // 2. Selector de Banco (Sin cambios)
               Text('Banco:', style: titleTextStyle),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
@@ -478,23 +534,16 @@ class _PagoPageState extends State<PagoPage> {
                 validator: (value) => value == null || value.isEmpty
                     ? 'Seleccione el banco.'
                     : null,
-                // *** IMPLEMENTACIÓN DEL DropdownMenuItem CON IMAGE.ASSET ***
                 items: _bankOptions.map((Map<String, dynamic> bankData) {
                   final String bankName = bankData['name'];
-                  final Widget bankIcon = bankData['icon']; // Es un Image.asset
+                  final Widget bankIcon = bankData['icon'];
 
                   return DropdownMenuItem<String>(
                     value: bankName,
                     child: Row(
-                      // Usa Row para alinear horizontalmente la imagen y el texto
                       children: [
-                        SizedBox(
-                          width: 30, // Define un ancho para la imagen
-                          child: bankIcon,
-                        ),
-                        const SizedBox(
-                          width: 10,
-                        ), // Espacio entre imagen y texto
+                        SizedBox(width: 30, child: bankIcon),
+                        const SizedBox(width: 10),
                         Text(
                           bankName,
                           style: const TextStyle(color: Colors.black),
@@ -503,7 +552,6 @@ class _PagoPageState extends State<PagoPage> {
                     ),
                   );
                 }).toList(),
-                // FIN DE IMPLEMENTACIÓN CON IMAGE.ASSET
                 onChanged: (String? newValue) {
                   setState(() {
                     _selectedBank = newValue;
@@ -513,7 +561,7 @@ class _PagoPageState extends State<PagoPage> {
 
               const SizedBox(height: 25),
 
-              // 3. Selector de Métodos de Pago
+              // 3. Selector de Métodos de Pago (Sin cambios)
               Text('Método de Pago:', style: titleTextStyle),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
@@ -546,37 +594,88 @@ class _PagoPageState extends State<PagoPage> {
 
               const SizedBox(height: 25),
 
-              // 4. Monto
-              Text('Monto a Pagar (Bs.)', style: titleTextStyle),
-              const SizedBox(height: 8),
-              TextFormField(
-                controller: _amountController,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(
-                    RegExp(r'^\d*([,.]\d{0,2})?$'),
+              // 4. Monto y Moneda (NUEVO ROW)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Expanded(
+                    flex: 2,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Moneda:', style: titleTextStyle),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String>(
+                          decoration: InputDecoration(
+                            border: defaultBorderStyle,
+                            contentPadding: uniformContentPadding,
+                            focusedBorder: focusedBorderStyle,
+                          ),
+                          style: const TextStyle(color: Colors.black),
+                          value: _selectedCurrency,
+                          validator: (value) => value == null || value.isEmpty
+                              ? 'Moneda req.'
+                              : null,
+                          items: _currencies.map((String value) {
+                            return DropdownMenuItem<String>(
+                              value: value,
+                              child: Text(
+                                value,
+                                style: const TextStyle(color: Colors.black),
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (String? newValue) {
+                            setState(() {
+                              _selectedCurrency = newValue;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    flex: 5,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Monto a Pagar', style: titleTextStyle),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: _amountController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          inputFormatters: [
+                            FilteringTextInputFormatter.allow(
+                              RegExp(r'^\d*([,.]\d{0,2})?$'),
+                            ),
+                          ],
+                          style: const TextStyle(color: Colors.black),
+                          decoration: InputDecoration(
+                            border: defaultBorderStyle,
+                            contentPadding: uniformContentPadding,
+                            hintText: 'Ej: 100.50',
+                            focusedBorder: focusedBorderStyle,
+                          ),
+                          validator: (value) {
+                            final text =
+                                value?.replaceAll(',', '.').trim() ?? '';
+                            if (text.isEmpty) {
+                              return 'El monto no puede estar vacío.';
+                            }
+                            if (double.tryParse(text) == null ||
+                                double.parse(text) <= 0) {
+                              return 'Ingrese un monto válido mayor a cero.';
+                            }
+                            return null;
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ],
-                style: const TextStyle(color: Colors.black),
-                decoration: InputDecoration(
-                  border: defaultBorderStyle,
-                  contentPadding: uniformContentPadding,
-                  hintText: 'Ej: 100.50',
-                  focusedBorder: focusedBorderStyle,
-                ),
-                validator: (value) {
-                  final text = value?.replaceAll(',', '.').trim() ?? '';
-                  if (text.isEmpty) {
-                    return 'El monto no puede estar vacío.';
-                  }
-                  if (double.tryParse(text) == null ||
-                      double.parse(text) <= 0) {
-                    return 'Ingrese un monto válido mayor a cero.';
-                  }
-                  return null;
-                },
               ),
 
               const SizedBox(height: 40),
@@ -601,19 +700,6 @@ class _PagoPageState extends State<PagoPage> {
               ),
 
               const SizedBox(height: 50),
-
-              // Aquí podría ir el diagnóstico si lo mantienes visible para debug
-              /*
-              Text(
-                'Diagnóstico:',
-                style: titleTextStyle,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _diagnosticData,
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-              */
             ],
           ),
         ),

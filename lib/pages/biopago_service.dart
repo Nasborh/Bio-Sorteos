@@ -1,6 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
+import 'dart:convert'; // Necesario para json.decode y base64Encode
+import 'package:http/http.dart' as http; // Necesario para la consulta HTTP
+// Aunque ya no lo usamos para la tasa de cambio, lo mantenemos por si se usa en otros lugares
+// o por si se decide volver a la API anterior.
+import 'package:intl/intl.dart';
 
 // --- Constantes de la aplicación Biopago (Confirmar estos valores) ---
 // 💡 NOTA: Verifique que estos nombres de paquete sean correctos para su versión.
@@ -103,7 +108,7 @@ class BiopagoService {
   }
 
   // ----------------------------------------------------------------------
-  //                         COMANDOS DE BIOPAGO BDV
+  //                         COMANDOS DE BIOPAGO BDV
   // ----------------------------------------------------------------------
 
   /// Comando: initialize (ACTUALIZADO para recibir parámetros)
@@ -143,7 +148,7 @@ class BiopagoService {
     required double amount,
   }) async {
     debugPrint(
-      '[BIOPAGO DEBUG] Ejecutando Process con valores reales del formulario.',
+      '[BIOPAGO DEBUG] Ejecutando Process con monto en Bolívares: $amount',
     );
 
     return _executeCommand("process", {
@@ -158,5 +163,57 @@ class BiopagoService {
   /// Comando: lastTransaction
   Future<Map<String, String?>> lastTransaction() async {
     return _executeCommand("lastTransaction", {});
+  }
+
+  // ----------------------------------------------------------------------
+  //                         NUEVA FUNCIONALIDAD: TASA DE CAMBIO (DOLARAPI)
+  // ----------------------------------------------------------------------
+
+  /// Consulta la API de DolarApi (pública) para obtener el valor promedio USD a Bs.
+  /// Retorna el valor de "promedio" como Double.
+  Future<double?> getExchangeRateUSD() async {
+    // URL de la nueva API pública (no requiere autenticación)
+    const String url = 'https://ve.dolarapi.com/v1/dolares/oficial';
+
+    try {
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        // La respuesta es un solo objeto JSON con el valor "promedio"
+        final Map<String, dynamic> jsonResponse = json.decode(response.body);
+
+        // 1. Intentamos obtener el valor de "promedio"
+        final dynamic rawRate = jsonResponse['promedio'];
+
+        // 2. Convertimos el valor a Double. La API lo puede retornar como int o double (num).
+        final double? exchangeRate = rawRate is num ? rawRate.toDouble() : null;
+
+        if (exchangeRate == null || exchangeRate <= 0) {
+          debugPrint(
+            '[TASA ERROR] El campo "promedio" no se encontró, no es numérico o es cero.',
+          );
+          return null;
+        }
+
+        debugPrint(
+          '[TASA ÉXITO] Tasa de cambio obtenida: ${exchangeRate.toStringAsFixed(4)}',
+        );
+        return exchangeRate;
+      }
+
+      // Si el estado no es 200
+      debugPrint(
+        '[TASA ERROR] HTTP Status ${response.statusCode}. Cuerpo: ${response.body}',
+      );
+      return null;
+    } catch (e) {
+      debugPrint(
+        '[TASA EXCEPCIÓN] Error al consultar la tasa de cambio DolarAPI: $e',
+      );
+      return null;
+    }
   }
 }
