@@ -32,7 +32,6 @@ class _PagoPageState extends State<PagoPage> {
   String _diagnosticData = 'Esperando intento de pago...';
 
   // --- ESTRUCTURA DE DATOS CON WIDGET Image.asset PARA LOGOS ---
-  // Reemplaza los paths de las imágenes ('assets/logos/...') por los paths reales en tu proyecto.
   final List<Map<String, dynamic>> _bankOptions = [
     {
       'name': 'Banco de Venezuela',
@@ -277,7 +276,7 @@ class _PagoPageState extends State<PagoPage> {
     }
   }
 
-  // --- Función para Manejar y Navegar el Resultado del Servicio ---
+  // --- Función para Manejar y Navegar el Resultado del Servicio (MODIFICADA) ---
   void _handleResult(
     BuildContext context,
     Map<String, String?> result,
@@ -294,8 +293,22 @@ class _PagoPageState extends State<PagoPage> {
 
     if (resultCode == "Accepted" || resultCode == "Success") {
       // PAGO EXITOSO
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const PagoAceptadoPage()),
+
+      // 1. Extraer los datos necesarios de la respuesta y el dato enviado
+      final String transactionId = result["transactionId"] ?? "N/A";
+      // Usar el monto enviado (dataSent) si el resultado no lo incluye o si es más seguro.
+      final String amount =
+          (dataSent["amount"] as double?)?.toStringAsFixed(2) ?? "0.00";
+      final String finalResult = result["result"] ?? "Success";
+
+      // 2. Navegar usando pushReplacementNamed con argumentos
+      Navigator.of(context).pushReplacementNamed(
+        'PagoAceptadoPage',
+        arguments: {
+          'transactionId': transactionId,
+          'amount': amount,
+          'result': finalResult,
+        },
       );
     } else {
       // PAGO FALLIDO / RECHAZADO / CANCELADO O ERROR CONTROLADO
@@ -374,7 +387,7 @@ class _PagoPageState extends State<PagoPage> {
                 ),
               ),
 
-              // 1. Letra y Número de Cédula (sin cambios)
+              // 1. Letra y Número de Cédula
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
@@ -500,7 +513,7 @@ class _PagoPageState extends State<PagoPage> {
 
               const SizedBox(height: 25),
 
-              // 3. Selector de Métodos de Pago (sin cambios)
+              // 3. Selector de Métodos de Pago
               Text('Método de Pago:', style: titleTextStyle),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
@@ -533,7 +546,7 @@ class _PagoPageState extends State<PagoPage> {
 
               const SizedBox(height: 25),
 
-              // 4. Monto (sin cambios)
+              // 4. Monto
               Text('Monto a Pagar (Bs.)', style: titleTextStyle),
               const SizedBox(height: 8),
               TextFormField(
@@ -550,8 +563,6 @@ class _PagoPageState extends State<PagoPage> {
                 decoration: InputDecoration(
                   border: defaultBorderStyle,
                   contentPadding: uniformContentPadding,
-                  prefixIcon: const Icon(Icons.attach_money),
-                  prefixIconColor: customPrimaryColor,
                   hintText: 'Ej: 100.50',
                   focusedBorder: focusedBorderStyle,
                 ),
@@ -570,7 +581,7 @@ class _PagoPageState extends State<PagoPage> {
 
               const SizedBox(height: 40),
 
-              // 5. Botón de Pagar (sin cambios)
+              // 5. Botón de Pagar
               ElevatedButton(
                 onPressed: _handlePayment,
                 style: ElevatedButton.styleFrom(
@@ -590,6 +601,19 @@ class _PagoPageState extends State<PagoPage> {
               ),
 
               const SizedBox(height: 50),
+
+              // Aquí podría ir el diagnóstico si lo mantienes visible para debug
+              /*
+              Text(
+                'Diagnóstico:',
+                style: titleTextStyle,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _diagnosticData,
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              */
             ],
           ),
         ),

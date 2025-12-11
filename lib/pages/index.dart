@@ -12,13 +12,22 @@ class _IndexPageState extends State<IndexPage> {
     Navigator.pushNamed(context, "PagoPage");
   }
 
+  // NUEVO: Función para ir a la página de administración
+  void _goToAdminPage() {
+    // Usamos Navigator.pushNamed para ir a la nueva ruta 'AdminPage'
+    Navigator.pushNamed(context, "AdminPage");
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
 
     return Scaffold(
+      // No usamos AppBar ya que todo está en el Stack
+      // appBar: AppBar(title: const Text('Inicio')),
       body: Stack(
         children: [
+          // Contenedor de la imagen de fondo
           Container(
             height: size.height,
             width: size.width,
@@ -40,6 +49,26 @@ class _IndexPageState extends State<IndexPage> {
             ),
           ),
 
+          // NUEVO: Botón de Configuración en la esquina superior derecha
+          Positioned(
+            top: 40.0, // Ajusta para evitar el notch/barra de estado
+            right: 10.0,
+            child: SafeArea(
+              // Usar SafeArea asegura que esté debajo de la barra de estado
+              child: IconButton(
+                icon: const Icon(
+                  Icons.settings,
+                  color: Color(0xFF004A72), // Color corporativo
+                  size: 30.0,
+                ),
+                onPressed:
+                    _goToAdminPage, // Llama a la nueva función de navegación
+                tooltip: 'Configuración de Administración',
+              ),
+            ),
+          ),
+
+          // Contenedor del botón INICIAR (el resto de tu código)
           Align(
             alignment: Alignment.bottomCenter,
             child: Padding(

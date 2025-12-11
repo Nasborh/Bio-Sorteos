@@ -7,8 +7,10 @@ import 'package:biopago_sorteos_app/pages/error.dart'; // Página de pago fallid
 import 'package:biopago_sorteos_app/pages/initialization.dart'; // Nueva página de inicio (Botón Iniciar)
 import 'package:biopago_sorteos_app/pages/biopago_service.dart'; // Servicio de Biopago
 import 'package:biopago_sorteos_app/pages/installation.dart'; // Página de instalación
+import 'package:biopago_sorteos_app/pages/admin.dart'; // Página de administración (NUEVA RUTA)
 
 // Instancia global del servicio de Biopago (asumimos que está definida en tu proyecto real)
+// Asegúrate de que biopago_service.dart esté correctamente ubicado.
 final BiopagoService biopagoService = BiopagoService();
 
 void main() {
@@ -44,7 +46,7 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
       // CRÍTICO: La aplicación debe iniciar en la página de inicialización interactiva.
-      initialRoute: 'InitializationPage',
+      initialRoute: 'IndexPage',
 
       // Definición de las rutas de tu aplicación
       routes: {
@@ -54,8 +56,22 @@ class MyApp extends StatelessWidget {
         'InitializationPage': (context) => const InitializationPage(),
         'InstallationPage': (context) => const InstallationPage(),
         'PagoPage': (context) => const PagoPage(),
-        // Debes asegurar que estas páginas acepten argumentos si son llamadas con pushNamed.
-        'PagoAceptadoPage': (context) => const PagoAceptadoPage(),
+        // NUEVA RUTA: Administracion
+        'AdminPage': (context) => const AdminPage(),
+
+        // RUTA MODIFICADA: PagoAceptadoPage recibe argumentos para el detalle
+        'PagoAceptadoPage': (context) {
+          final args =
+              ModalRoute.of(context)?.settings.arguments
+                  as Map<String, String>? ??
+              {};
+          return PagoAceptadoPage(
+            transactionId: args['transactionId'] ?? 'N/A',
+            amount: args['amount'] ?? '0.00',
+            result: args['result'] ?? 'Success (No Data)',
+          );
+        },
+
         'PagoFallidoPage': (context) => const PagoFallidoPage(
           // Asumo que esta es la ruta de error
           title: 'Error de Pago',
